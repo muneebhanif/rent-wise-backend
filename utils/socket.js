@@ -3,9 +3,10 @@ const app = express();
 const http = require("http");
 const socketIo = require("socket.io");
 const server = http.createServer(app);
+const allowedOrigins = [process.env.CLIENT_URL, "http://localhost:4000"].filter(Boolean);
 const io = socketIo(server, {
   cors: {
-    origin: process.env.CLIENT_URL, 
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
     credentials: true 

@@ -22,7 +22,7 @@ const GenerateToken = async (user, req, res, next) => {
       httpOnly: BOOLEAN.TRUE,
      secure: process.env.NODE_ENV !== "development", // the working localhost one
       maxAge: 30 * 24 * 60 * 60 * 1000,
-     sameSite: "strict",    // the working localhost one
+     sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
     
       // sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
       //   secure: process.env.NODE_ENV === 'production', // Use HTTPS in production
