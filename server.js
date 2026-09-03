@@ -1,4 +1,5 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 const express = require("express");
 const helmet = require("helmet");
 const xss = require("xss-clean");
@@ -7,7 +8,6 @@ const session = require("express-session");
 const passport = require("passport");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
-const path = require("path");
 
 const limiter = require("./utils/Limitar");
 const connectDB = require("./config/db");
@@ -33,6 +33,9 @@ const { errorHandler, notFound } = require("./middleware/errorHandler");
 const AppError = require("./utils/AppError");
 const asyncHandler = require("./middleware/asyncWrapper");
 const { setupSocket, io, app, server } = require("./utils/socket");
+// Register Passport strategies when the app is loaded by Vercel as well as
+// when it is started with `node server.js`.
+require("./utils/third_party_Login");
 
 
 app.use(helmet({ crossOriginResourcePolicy: false }));
@@ -150,7 +153,6 @@ const startServer = async () => {
   try {
     await Promise.all([
       connectDB(),
-      require("./utils/third_party_Login"),
     ]);
     
     initializeAdmin();
@@ -164,4 +166,8 @@ const startServer = async () => {
   }
 };
 
-startServer();
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = app;

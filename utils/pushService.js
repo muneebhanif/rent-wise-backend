@@ -5,13 +5,18 @@ const VAPID_KEYS = {
   privateKey: process.env.WEB_PUSH_PRIVATE_KEY,
 };
 
-webPush.setVapidDetails(
-  "mailto:alishahids189@gmail.com",
-  VAPID_KEYS.publicKey,
-  VAPID_KEYS.privateKey
-);
+const hasVapidKeys = Boolean(VAPID_KEYS.publicKey && VAPID_KEYS.privateKey);
+
+if (hasVapidKeys) {
+  webPush.setVapidDetails(
+    "mailto:alishahids189@gmail.com",
+    VAPID_KEYS.publicKey,
+    VAPID_KEYS.privateKey
+  );
+}
 
 const sendWebPush = async (subscription, payload , next) => {
+  if (!hasVapidKeys) return null;
   try {
     await webPush.sendNotification(subscription, JSON.stringify(payload));
   } catch (error) {
