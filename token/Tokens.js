@@ -6,6 +6,7 @@ const { ERROR_MESSAGE } = require("../messages/error");
 const { STATUS } = require("../messages/status");
 const { RESPONCE_MESSAGE } = require("../messages/response");
 const { BOOLEAN } = require("../utils/Roles");
+const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
 
 const makeToken = async (_id) => {
   return jsonwebtoken.sign({ _id }, process.env.JWT_API_SECRET_KEY, {
@@ -20,9 +21,9 @@ const GenerateToken = async (user, req, res, next) => {
     const token = await makeToken(user._id);
     res.cookie("jwt", token, {
       httpOnly: BOOLEAN.TRUE,
-     secure: process.env.NODE_ENV !== "development", // the working localhost one
+     secure: isProduction,
       maxAge: 30 * 24 * 60 * 60 * 1000,
-     sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+     sameSite: isProduction ? "None" : "Lax",
     
       // sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
       //   secure: process.env.NODE_ENV === 'production', // Use HTTPS in production
