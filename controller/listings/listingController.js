@@ -15,6 +15,7 @@ const { RESPONCE_MESSAGE, LISTINGS, } = require("../../messages/response");
 const { STATUS } = require("../../messages/status");
 const { BOOLEAN } = require("../../utils/Roles");
 const { CreateNotification } = require("../../controller/notification/notification")
+const { enabled: cloudinaryEnabled, uploadFile } = require("../../utils/cloudinary");
 
 
 exports.uploadMedia = async (req, res, next) => {
@@ -87,12 +88,16 @@ exports.CreateListings = async (req, res, next) => {
                 error: `${LISTINGS.ERROR_MISSING_REQUIRED_FIELDS} ${missingFields.join(", ")}. ${LISTINGS.PLEASE_PROVIDE_ALL_REQUIRED_FIELDS}`.trim()
             });
         }
+        if (process.env.VERCEL === '1' && req.files && (req.files.images?.length || req.files.videos?.length) && !cloudinaryEnabled) {
+            return next(new AppError(BOOLEAN.FALSE, "Cloudinary storage is not configured for media uploads", STATUS.INTERNAL_SERVER_ERROR));
+        }
         let images = [];
         if (req.files && req.files['images']) {
             try {
-                const imagePromises = req.files['images'].map(file => {
+                const imagePromises = req.files['images'].map(async file => {
+                    const uploaded = cloudinaryEnabled ? await uploadFile(file, `rentwise/listings/${listingId}`) : null;
                     const image = new Image({
-                        url: `/uploads/media/${listingId}/${file.filename}`,
+                        url: uploaded?.secure_url || `/uploads/media/${listingId}/${file.filename}`,
                         caption: ""
                     });
                     return image.save();
@@ -107,9 +112,10 @@ exports.CreateListings = async (req, res, next) => {
         let videos = [];
         if (req.files && req.files['videos']) {
             try {
-                const videoPromises = req.files['videos'].map(file => {
+                const videoPromises = req.files['videos'].map(async file => {
+                    const uploaded = cloudinaryEnabled ? await uploadFile(file, `rentwise/listings/${listingId}`) : null;
                     const video = new Video({
-                        url: `/uploads/media/${listingId}/${file.filename}`,
+                        url: uploaded?.secure_url || `/uploads/media/${listingId}/${file.filename}`,
                         caption: ""
                     });
                     return video.save();

@@ -34,6 +34,12 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const upload = multer({ storage: storage, fileFilter: fileFilter });
+// Vercel's filesystem is read-only. Memory storage lets the controller send
+// files to Cloudinary instead of trying to write them into /uploads.
+const upload = multer({
+  storage: (process.env.CLOUDINARY_CLOUD_NAME || process.env.VERCEL === '1') ? multer.memoryStorage() : storage,
+  fileFilter: fileFilter,
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
 
 module.exports = upload;
