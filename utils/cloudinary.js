@@ -6,7 +6,9 @@ const enabled = Boolean(
 );
 
 if (enabled) {
-  if (cloudinaryUrl) cloudinary.config({ cloudinary_url: cloudinaryUrl });
+  // The SDK reads CLOUDINARY_URL directly from the environment.
+  // Calling config() without overriding it also correctly parses the URL.
+  if (cloudinaryUrl) cloudinary.config();
   else cloudinary.config({ cloud_name: process.env.CLOUDINARY_CLOUD_NAME, api_key: process.env.CLOUDINARY_API_KEY, api_secret: process.env.CLOUDINARY_API_SECRET });
 }
 
