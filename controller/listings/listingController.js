@@ -60,13 +60,14 @@ exports.uploadMedia = async (req, res, next) => {
 // Updated_One-&-Latest
 exports.CreateListings = async (req, res, next) => {
     try {
-        const amenities = Array.isArray(req.body.amenities)
-            ? req.body.amenities
-            : JSON.parse(req.body.amenities);
-
-        const rules = Array.isArray(req.body.rules)
-            ? req.body.rules
-            : JSON.parse(req.body.rules);
+        const parseArray = (value) => {
+            if (Array.isArray(value)) return value;
+            if (typeof value !== 'string' || !value.trim()) return [];
+            try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; }
+            catch { return []; }
+        };
+        const amenities = parseArray(req.body.amenities);
+        const rules = parseArray(req.body.rules);
 
         const { owner, title, description, price, category, priceUnit,
             location, minimumBid, bidIncrement, bidEndDate
