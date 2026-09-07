@@ -675,7 +675,11 @@ exports.GetListingByUserId = async (req, res, next) => {
     const { id } = req.params;
     try {
 
-        const listing = await RentalItem.find({ owner: id });
+        const listing = await RentalItem.find({ owner: id })
+            .populate("images")
+            .populate("videos")
+            .populate("location")
+            .populate("facilities");
         const count = await RentalItem.countDocuments({ owner: id });
 
 
