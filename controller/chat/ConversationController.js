@@ -257,7 +257,7 @@ const fetchConversationsForSidebarOld = async (req, res, next) => {
     })
       .sort({ updatedAt: -1 })
       .populate("participants", "name imageUrl")
-      .populate("listing", "title image");
+      .populate("listing", "title image category owner");
 
     if (!conversations.length) {
       return next(
@@ -340,6 +340,7 @@ const fetchConversationsForSidebar = async (req, res, next) => {
             imageUrl: 1,
           },
           listing: {
+            owner: 1,
             _id: 1,
             title: 1,
             image: 1,
@@ -415,7 +416,7 @@ const fetchMessagesByConversation = async (req, res, next) => {
       .sort({ createdAt: 1 })
       .populate("sender", "name imageUrl")
       .populate("receiver", "name imageUrl")
-      .populate("listing", "title image");
+      .populate("listing", "title image category owner");
 
     await Messsage.updateMany(
       { conversation: conversationId, receiver: userId, status: "sent" },

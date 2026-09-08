@@ -118,7 +118,7 @@ exports.CreateAggrement = async (req, res, next) => {
         }
 
         if (listing.owner.toString() !== ownerId.toString()) {
-            return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.NOT_LISTING_OWNER, STATUS.UNAUTHORIZED));
+            return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.NOT_LISTING_OWNER, STATUS.FORBIDDEN));
         }
 
         if (renterId.toString() === ownerId.toString()) {
