@@ -70,9 +70,10 @@ const login = async (req, res, next) => {
     if (!isPasswordValid) {
       return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.INVALID_PASSWORD, STATUS.UNAUTHORIZED));
     }
-    await GenerateToken(user, req, res, next);
+    const token = await GenerateToken(user, req, res, next);
     return res.status(STATUS.SUCCESS).json({
       message: RESPONCE_MESSAGE.LOGIN_SUCCESS,
+      token,
       // Return the profile needed by the navbar immediately. Never expose the
       // password hash in the login response.
       user: {

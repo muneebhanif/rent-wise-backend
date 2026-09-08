@@ -12,7 +12,7 @@ function clearCookies(req, res) {
 
 exports.AuthorizeUser = (RequiredRole) => {
   return async (req, res, next) => {
-    const token = req.cookies.jwt;
+    const token = req.cookies.jwt || req.headers.authorization?.replace(/^Bearer\s+/i, "");
 
     if (!token) {
       return res.status(STATUS.UNAUTHORIZED).json({ message: "Please Login No token provided " });

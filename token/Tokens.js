@@ -22,13 +22,19 @@ const makeToken = async (_id) => {
 
 const GenerateToken = async (user, req, res, next) => {
   try {
-    await res.clearCookie("jwt");
+    await res.clearCookie("jwt", {
+      httpOnly: BOOLEAN.TRUE,
+      secure: isDeployed,
+      sameSite: isDeployed ? "None" : "Lax",
+      path: "/",
+    });
     const token = await makeToken(user._id);
     res.cookie("jwt", token, {
       httpOnly: BOOLEAN.TRUE,
       secure: isDeployed,
       maxAge: 30 * 24 * 60 * 60 * 1000,
       sameSite: isDeployed ? "None" : "Lax",
+      path: "/",
     
       // sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
       //   secure: process.env.NODE_ENV === 'production', // Use HTTPS in production
