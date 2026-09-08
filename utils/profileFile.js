@@ -1,6 +1,7 @@
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
+const { enabled: cloudinaryEnabled } = require("./cloudinary");
 
 const UserDynamicfile = (directory) => {
   if (!fs.existsSync(directory)) {
@@ -36,6 +37,15 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const profileImage = multer({ storage: storage, fileFilter: fileFilter });
+// Serverless deployments (including Vercel) have a read-only filesystem.
+// Keep local development on disk, but keep production uploads in memory so
+// the controller can send them to Cloudinary instead of /var/task/uploads.
+const profileImage = multer({
+  storage: cloudinaryEnabled || process.env.VERCEL === "1"
+    ? multer.memoryStorage()
+    : storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 
 module.exports = profileImage;

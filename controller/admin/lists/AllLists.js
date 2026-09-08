@@ -57,6 +57,27 @@ exports.getListingById = async(req,res,next)=>{
     }
 }
 
+exports.getDashboardStats = async (req, res, next) => {
+    try {
+        const User = require("../../../model/user/userModel");
+        const [totalUsers, listings, agreements] = await Promise.all([
+            User.countDocuments(), Listings.find().select("listingStatus"),
+            Aggrement.find().populate("agreementDetailsId", "aggrementDetail")
+        ]);
+        const revenue = agreements.reduce((sum, agreement) => {
+            const details = agreement.agreementDetailsId?.aggrementDetail || {};
+            const amount = Number(details.rentAmount ?? details.RentAmount ?? 0);
+            return sum + (Number.isFinite(amount) ? amount : 0);
+        }, 0);
+        res.status(200).json({ status: STATUS.SUCCESS, data: {
+            totalUsers, totalListings: listings.length,
+            activeListings: listings.filter((item) => item.listingStatus === "active").length,
+            pendingApprovals: listings.filter((item) => item.listingStatus === "pending").length,
+            totalBookings: agreements.length, revenue
+        }});
+    } catch (error) { next(error); }
+};
+
 exports.deleteListing = async(req,res,next)=>{
     try {
         const listing = await Listings.findByIdAndDelete(req.params.id)

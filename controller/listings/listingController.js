@@ -268,7 +268,12 @@ exports.toggleFavoriteListing = async (req, res, next) => {
             });
         }
 
-        const isFavorited = user.favoriteListings.includes(id);
+        // Mongoose stores these as ObjectIds, while route params are strings.
+        // ObjectId.includes(string) is false, which previously made toggling
+        // add duplicates and made removal impossible.
+        const isFavorited = user.favoriteListings.some(
+            (listingId) => listingId.toString() === id.toString()
+        );
         if (isFavorited) {
             user.favoriteListings = user.favoriteListings.filter(
                 (listingId) => listingId.toString() !== id.toString()
@@ -319,7 +324,9 @@ exports.getFavoriteListings = async (req, res, next) => {
 
         return res.status(STATUS.SUCCESS).json({
             success: BOOLEAN.TRUE,
-            favoriteListings: user.favoriteListings,
+            // A listing can be deleted after it was favorited; do not return
+            // null entries that break the favorites page.
+            favoriteListings: user.favoriteListings.filter(Boolean),
         });
     } catch (error) {
         next(error);

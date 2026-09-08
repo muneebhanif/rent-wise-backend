@@ -9,6 +9,7 @@ const AppError = require("../../utils/AppError");
 const { ROLES, BOOLEAN } = require("../../utils/Roles");
 const UserSettings = require("../../model/notification/notificationSetting")
 const mongoose = require('mongoose')
+const { enabled: cloudinaryEnabled, uploadFile } = require("../../utils/cloudinary");
 
 
 exports.GetUser = async (req, res, next) => {
@@ -48,7 +49,19 @@ exports.updateUserDashboardProfile = async (req, res, next) => {
       return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.USER_NOT_FOUND, STATUS.NOT_FOUND));
     }
     if (req.file) {
-      updateData.imageUrl = `/uploads/profile/${id}/${req.file.filename}`;
+      if (req.file.buffer) {
+        if (!cloudinaryEnabled) {
+          return next(new AppError(
+            BOOLEAN.FALSE,
+            "Profile image storage is not configured for this deployment",
+            STATUS.INTERNAL_SERVER_ERROR
+          ));
+        }
+        const uploaded = await uploadFile(req.file, `rentwise/profiles/${id}`);
+        updateData.imageUrl = uploaded.secure_url;
+      } else {
+        updateData.imageUrl = `/uploads/profile/${id}/${req.file.filename}`;
+      }
     }
 
     if (password) {

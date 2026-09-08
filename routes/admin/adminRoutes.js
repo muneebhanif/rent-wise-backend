@@ -5,6 +5,7 @@ const user = require("../../controller/admin/users/userforadmin")
 const { AuthorizeUser } = require("../../middleware/auth");
 
 router.get("/admin/getAllLists", AuthorizeUser("admin"), asyncHandler(listings.getAllLists))
+router.get("/admin/dashboardStats", AuthorizeUser("admin"), asyncHandler(listings.getDashboardStats))
 
 router.get("/admin/getAllLists/:id", AuthorizeUser("admin"), asyncHandler(listings.getListingById))
 
