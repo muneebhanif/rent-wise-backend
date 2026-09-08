@@ -208,6 +208,13 @@ const createMessage = async (req, res, next) => {
         listing: listingArray,
       });
 
+      io.to(receiver.toString()).emit("messageNotification", {
+        conversationId: conversationId.toString(),
+        receiver: receiver.toString(),
+        sender: senderId.toString(),
+        message: newMessage,
+      });
+
       if (conversationResult.isNewConversation) {
         io.to(receiver.toString()).emit("newConversation", {
           conversation: conversationResult.conversation,

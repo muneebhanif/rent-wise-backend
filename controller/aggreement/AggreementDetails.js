@@ -272,6 +272,12 @@ exports.sentAggreement = async (req, res, next) => {
                 receiver:agg.renterId,
                 listing: listingId,
               });
+            io.to(agg.renterId.toString()).emit("messageNotification", {
+                conversationId: conversationID.toString(),
+                receiver: agg.renterId.toString(),
+                sender: agg.ownerId.toString(),
+                message: messageLink,
+            });
                    
         } else {
             return next(new AppError(BOOLEAN.FALSE, CONVERSATION.SOCKET_ERROR, STATUS.NOT_FOUND));
