@@ -73,7 +73,18 @@ const login = async (req, res, next) => {
     await GenerateToken(user, req, res, next);
     return res.status(STATUS.SUCCESS).json({
       message: RESPONCE_MESSAGE.LOGIN_SUCCESS,
-      user: { id: user._id, role: user.role },
+      // Return the profile needed by the navbar immediately. Never expose the
+      // password hash in the login response.
+      user: {
+        id: user._id,
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phoneNumber: user.phoneNumber,
+        bio: user.bio,
+        imageUrl: user.imageUrl,
+      },
     });
   } catch (error) {
     next(error);
