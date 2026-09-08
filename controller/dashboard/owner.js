@@ -1,3 +1,4 @@
+const { publicListingFilter } = require("../../services/rentalAvailability");
 const User = require("../../model/user/userModel");
 const Aggrement = require("../../model/agreements/Aggrement");
 const AggrementDetails = require("../../model/agreements/AggrementDetails");
@@ -29,7 +30,7 @@ exports.OwnerProfileData = async (req, res, next) => {
         // }
 
         if (user) {
-            const listings = await RentalItem.find({ owner: user._id })
+            const listings = await RentalItem.find(await publicListingFilter({ owner: user._id }))
             .populate("images")
             .populate("videos")
             res.status(STATUS.SUCCESS).json({

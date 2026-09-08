@@ -1,3 +1,6 @@
+const { dateValue, rentalState, serializeAgreement } = require("../../utils/rentalState");
+const { currentAgreements } = require("../../services/rentalAvailability");
+const { randomUUID } = require("crypto");
 const Aggrement = require("../../model/agreements/Aggrement");
 const AggrementDetails = require("../../model/agreements/AggrementDetails");
 const RentalItem = require("../../model/listings/RentalItemModel");
@@ -27,146 +30,70 @@ const CreateQrCode = async (data, next) => {
 
 exports.getByOwnerId = async (req, res, next) => {
     try {
-        const ownerId = req.user.id;
-        const agreements = await Aggrement.find({ ownerId })
-            .populate("listingId")
-            .populate("renterId")
-            .populate("agreementDetailsId")
-            .populate("blockChain");
-
-        if (!agreements?.length) {
-                    return res.status(STATUS.SUCCESS).json({
-                        status: BOOLEAN.TRUE,
-                        message: AGGREEMENT.AGGREMENT_NOT_EXISTED,
-                        data: []
-                    });        }
-
-        for (const agreement of agreements) {
-            const aggDetails = await AggrementDetails.findById(agreement.agreementDetailsId);
-            const { startDate, endDate } = aggDetails.aggrementDetail;
-            
-            const currentDate = new Date();
-            const agreementStart = new Date(startDate);
-            const agreementEnd = new Date(endDate);
-            const originalStatus = agreement.agreementStatus;
-
-            let newStatus;
-            
-            if (!agreement.renterConfirmed) {
-                newStatus = currentDate > agreementEnd ? "Inactive" 
-                    : (currentDate >= agreementStart ? "pending" : originalStatus);
-            } else {
-                newStatus = currentDate > agreementEnd ? "Inactive" 
-                    : currentDate >= agreementStart ? "active" 
-                    : currentDate < agreementStart ? "pending" 
-                    : originalStatus;
-            }
-
-            if (newStatus !== originalStatus) {
-                const updatedAgreement = await Aggrement.findByIdAndUpdate(
-                    agreement._id,
-                    { agreementStatus: newStatus },
-                    { new: true }
-                );
-
-                await CreateNotification(
-                    agreement.ownerId._id,
-                    null,
-                    "aggrement",
-                    `Agreement status changed to ${newStatus} for ${agreement.listingId.title}`,
-                    next,
-                    res
-                );
-
-                await CreateNotification(
-                    agreement.renterId._id,
-                    null,
-                    "aggrement",
-                    `Agreement status changed to ${newStatus} for ${agreement.listingId.title}`,
-                    next,
-                    res
-                );
-            }
-        }
-
-        res.status(STATUS.SUCCESS).json({
-            status: STATUS.SUCCESS,
-            message: RESPONCE_MESSAGE.AGGREGEMENT_CREATED,
-            data: agreements,
-        });
-    } catch (error) {
-        next(error);
-    }
+        const agreements = await Aggrement.find({ ownerId: req.user._id })
+            .populate({ path: 'listingId', populate: { path: 'images' } })
+            .populate('renterId', 'name imageUrl').populate('agreementDetailsId')
+            .populate('blockChain').sort({ createdAt: -1 });
+        res.json({ status: STATUS.SUCCESS, data: agreements.map(serializeAgreement) });
+    } catch (error) { next(error); }
 };
 
 exports.CreateAggrement = async (req, res, next) => {
+    let lock;
+    let savedDetails;
+    let savedAgreement;
+    const { listingId, renterId, aggrementDetail, ownerConfirmed, conversationID } = req.body;
     try {
-        const { listingId, renterId, aggrementDetail, ownerConfirmed, conversationID } = req.body;
         const ownerId = req.user._id;
-
-        if (!ownerId) {
-            return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.USER_NOT_FOUND, STATUS.NOT_FOUND));
+        if (!listingId || !renterId || !aggrementDetail || !conversationID) {
+            return next(new AppError(false, ERROR_MESSAGE.MISSING_FIELDS, STATUS.BAD_REQUEST));
         }
-
-        if (!listingId || !renterId || !aggrementDetail) {
-            return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.MISSING_FIELDS, STATUS.BAD_REQUEST));
+        const start = dateValue(aggrementDetail.startDate);
+        const end = dateValue(aggrementDetail.endDate, true);
+        if (!start || !end || end < start || end < new Date()) {
+            return next(new AppError(false, 'Choose valid rental dates. The end date must not be before the start date or today.', STATUS.BAD_REQUEST));
         }
-
         const listing = await RentalItem.findById(listingId);
-        if (!listing) {
-            return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
+        if (!listing) return next(new AppError(false, ERROR_MESSAGE.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
+        if (String(listing.owner) !== String(ownerId)) {
+            return next(new AppError(false, ERROR_MESSAGE.NOT_LISTING_OWNER, STATUS.FORBIDDEN));
         }
-
-        if (listing.owner.toString() !== ownerId.toString()) {
-            return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.NOT_LISTING_OWNER, STATUS.FORBIDDEN));
+        if (String(renterId) === String(ownerId)) {
+            return next(new AppError(false, ERROR_MESSAGE.OwneAggrement, STATUS.BAD_REQUEST));
         }
-
-        if (renterId.toString() === ownerId.toString()) {
-            return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.OwneAggrement, STATUS.BAD_REQUEST));
+        const conversation = await Conversation.findById(conversationID);
+        if (!conversation || ![ownerId, renterId].every(id => conversation.participants.some(p => String(p) === String(id))) ||
+            !conversation.listing.some(id => String(id) === String(listingId))) {
+            return next(new AppError(false, 'Choose a listing and renter from this conversation.', STATUS.BAD_REQUEST));
         }
-
-        const existingAgreement = await Aggrement.findOne({
-            listingId: listingId,
-            renterId: renterId,
-            $or: [{ agreementStatus: "pending" }, { agreementStatus: "active" }]
-        });
-
-
-        if (existingAgreement) {
-            return res.status(STATUS.FORBIDDEN).json({
-                status: STATUS.FORBIDDEN,
-                message: AGGREEMENT.AGGREMENT_ALREADY_EXISTS
-            });
+        // A short atomic lease serializes creation for this listing across API instances.
+        const token = randomUUID();
+        lock = await RentalItem.findOneAndUpdate({
+            _id: listingId, owner: ownerId, listingStatus: 'active',
+            $or: [{ 'agreementCreationLock.expiresAt': { $exists: false } },
+                { 'agreementCreationLock.expiresAt': { $lt: new Date() } }]
+        }, { $set: { agreementCreationLock: { token, expiresAt: new Date(Date.now() + 60000) } } }, { new: true });
+        if (!lock) return next(new AppError(false, 'This listing is unavailable or an agreement is being created. Please refresh.', STATUS.CONFLICT));
+        if ((await currentAgreements([listingId])).length) {
+            return next(new AppError(false, 'This listing already has a current agreement.', STATUS.CONFLICT));
         }
-        const aggrementDetails = new AggrementDetails({
-            aggrementDetail: aggrementDetail
-        })
-        await aggrementDetails.save();
-
-        const agg = new Aggrement({
-            listingId: listingId,
-            ownerId: ownerId,
-            renterId: renterId,
-            conversationID: conversationID,
-            agreementStatus: "pending",
-            ownerConfirmed: ownerConfirmed || false,
-            renterConfirmed: false,
-            agreementDetailsId: aggrementDetails._id,
-        })
-
-        const qrCode = await CreateQrCode(agg._id);
-        agg.qrId = qrCode;
-
-        await agg.save();
-        res.status(STATUS.SUCCESS).json({
-            status: STATUS.SUCCESS,
-            message: RESPONCE_MESSAGE.AGGREGEMENT_CREATED,
-            data: agg,
-        })
+        savedDetails = new AggrementDetails({ aggrementDetail });
+        const agreement = new Aggrement({ listingId, ownerId, renterId, conversationID,
+            agreementStatus: 'pending', ownerConfirmed: ownerConfirmed === true,
+            renterConfirmed: false, agreementDetailsId: savedDetails._id });
+        agreement.qrId = await QRCode.toDataURL(JSON.stringify(agreement._id));
+        await savedDetails.save();
+        await agreement.save();
+        savedAgreement = agreement;
+        res.status(STATUS.SUCCESS).json({ status: STATUS.SUCCESS, message: RESPONCE_MESSAGE.AGGREGEMENT_CREATED, data: agreement });
     } catch (error) {
+        if (savedDetails && !savedAgreement) await AggrementDetails.deleteOne({ _id: savedDetails._id }).catch(() => {});
         next(error);
+    } finally {
+        if (lock) await RentalItem.updateOne({ _id: listingId, 'agreementCreationLock.token': lock.agreementCreationLock.token },
+            { $unset: { agreementCreationLock: '' } }).catch(error => console.error('Agreement lock cleanup failed', error.message));
     }
-}
+};
 
 exports.verifyAggrement = async (req, res, next) => {
     try {
@@ -343,67 +270,27 @@ exports.GetAggrementByQr = async (req, res, next) => { }
 // To View the aggrement Only for The Renter and Update the Aggrement For Owner To Make the Aggrement As Complete
 exports.VerifyAggrementByRenter = async (req, res, next) => {
     try {
-        const user = req.user._id;
         const { aggId, renterConfirmed } = req.body;
-
-        const aggrement = await Aggrement.findById(aggId).populate('agreementDetailsId');
-        if (!aggrement) {
-            return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.AGGREMENT_NOT_FOUND, STATUS.NOT_FOUND));
+        const agreement = await Aggrement.findById(aggId).populate('agreementDetailsId');
+        if (!agreement) return next(new AppError(false, 'Agreement not found.', STATUS.NOT_FOUND));
+        if (String(agreement.renterId) !== String(req.user._id)) {
+            return next(new AppError(false, 'Only the renter can confirm this agreement.', STATUS.FORBIDDEN));
         }
-
-         const userName = await User.findById(user).select('name')
-         const listingTitle = await RentalItem.findById(aggrement.listingId).select('title')
-        const ownerId = aggrement.ownerId;
-        if (aggrement.ownerConfirmed === BOOLEAN.TRUE && aggrement.renterConfirmed === BOOLEAN.TRUE) {
-            return res.status(STATUS.SUCCESS).json({
-                status: STATUS.FORBIDDEN,
-                message: AGGREEMENT.AGGREMENT_IS_ALREADY_CONFIRMED_ACTIVE,
-            })
+        if (['completed', 'rejected'].includes(rentalState(agreement))) {
+            return next(new AppError(false, 'This agreement has ended and cannot be confirmed.', STATUS.CONFLICT));
         }
-        if (aggrement.ownerConfirmed === BOOLEAN.FALSE) {
-            return res.status(STATUS.SUCCESS).json({
-                status: STATUS.UNAUTHORIZED,
-                message: AGGREEMENT.AFFGEMENT_NOT_CONFIRMED_BY_OWNER,
-            })
+        if (!agreement.ownerConfirmed || renterConfirmed !== true) {
+            return next(new AppError(false, 'Both owner and renter must confirm the agreement.', STATUS.BAD_REQUEST));
         }
-        if (user.toString() !== aggrement.renterId.toString()) {
-            return res.status(STATUS.SUCCESS).json({
-                status: STATUS.UNAUTHORIZED,
-                message: AGGREEMENT.AFFGEMENT_CAN_ONLY_BE_CONFIRMED_BY_RENTER,
-            })
-        }
-        if (renterConfirmed === BOOLEAN.TRUE && aggrement.renterConfirmed === BOOLEAN.FALSE && user.toString() === aggrement.renterId.toString()) {
-            const agg = await Aggrement.findByIdAndUpdate(aggId, { renterConfirmed: BOOLEAN.TRUE, agreementStatus: "active" }, { new: true });
-            if(agg){
-                await CreateNotification(
-                    agg.renterId,
-                    agg.ownerId,
-                    "aggreement",
-                    `${userName.name} has Confirmed the agreement for ${listingTitle.title}.`,
-                    next,
-                    res
-                );
-            }
-    
-            return res.status(STATUS.SUCCESS).json({
-                status: STATUS.SUCCESS,
-                message: AGGREEMENT.AGGREMENT_IS_CONFIRMED,
-            })
-        }
-        else {
-            const agg = await Aggrement.findByIdAndUpdate(aggId, { renterConfirmed: BOOLEAN.TRUE, agreementStatus: "pending" }, { new: true });
-            return res.status(STATUS.BAD_REQUEST).json({
-                status: STATUS.BAD_REQUEST,
-                message: AGGREEMENT.AGGREMENT_IS_NOT_CONFIRMED,
-            })
-        }
-    } catch (err) {
-        next(err);
-    }
-}
-
-
-
+        const wasConfirmed = agreement.renterConfirmed;
+        agreement.renterConfirmed = true;
+        agreement.agreementStatus = rentalState(agreement) === 'rented' ? 'active' : 'pending';
+        await agreement.save();
+        if (!wasConfirmed) await CreateNotification(agreement.ownerId, req.user._id, 'aggreement',
+            'Your renter has confirmed the rental agreement.', error => console.error(error.message));
+        res.json({ status: STATUS.SUCCESS, message: 'Agreement confirmed.', data: serializeAgreement(agreement) });
+    } catch (error) { next(error); }
+};
 
 exports.UpdateAggrementByOwner = async (req, res, next) => {
     try {
@@ -419,20 +306,24 @@ exports.UpdateAggrementByOwner = async (req, res, next) => {
             return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.AGGREMENT_NOT_FOUND, STATUS.NOT_FOUND));
         }
 
-        if (user.toString() !== agg.ownerId.toString()) {
-            return res.status(STATUS.SUCCESS).json({
-                status: STATUS.SUCCESS,
-                message: AGGREEMENT.AGGREMENT_NOT_OWNER,
-                data: agg,
-            });
+        if (String(user) !== String(agg.ownerId)) {
+            return next(new AppError(false, AGGREEMENT.AGGREMENT_NOT_OWNER, STATUS.FORBIDDEN));
         }
-
+        if (['completed', 'rejected'].includes(rentalState(agg))) {
+            return next(new AppError(false, 'An ended agreement cannot be edited. Create a new agreement instead.', STATUS.CONFLICT));
+        }
         const agreementDetails = await AggrementDetails.findById(agg.agreementDetailsId);
         if (!agreementDetails) {
             return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.AGGREMENT_DETAILS_NOT_FOUND, STATUS.NOT_FOUND));
         }
 
         if (agg.ownerConfirmed === BOOLEAN.TRUE && agg.renterConfirmed === BOOLEAN.FALSE) {
+            const merged = { ...agreementDetails.aggrementDetail, ...aggrementDetail };
+            const start = dateValue(merged.startDate);
+            const end = dateValue(merged.endDate, true);
+            if (!start || !end || end < start || end < new Date()) {
+                return next(new AppError(false, 'Choose valid rental start and end dates.', STATUS.BAD_REQUEST));
+            }
             const updatedDetailsofaggrement = await AggrementDetails.findByIdAndUpdate(
                 agg.agreementDetailsId,
                 {

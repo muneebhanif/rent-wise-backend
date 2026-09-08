@@ -61,6 +61,8 @@ router.put(
 // Route to delete a listing by ID
 router.delete("/delete/:id", asyncHandler(rentalController.DeleteListings));
 
+router.get("/mine", AuthorizeUser("user"), asyncHandler(rentalController.GetMyListings));
+
 // Route to get all listings
 router.get("/all", asyncHandler(rentalController.GetListings));
 

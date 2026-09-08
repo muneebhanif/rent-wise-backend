@@ -1,3 +1,4 @@
+const { serializeAgreement } = require("../../utils/rentalState");
 const User = require("../../model/user/userModel");
 const Aggrement = require("../../model/agreements/Aggrement");
 const AggrementDetails = require("../../model/agreements/AggrementDetails");
@@ -17,13 +18,13 @@ const Conversation = require("../../model/chat/ConversationModel");
 exports.fetchRenterAggreements = async (req, res, next)=>{
     try {
         const renter = req.user._id;
-        const aggreements = await Aggrement.find({renterId:renter}).populate("agreementDetailsId").populate("ownerId").populate("listingId")
+        const aggreements = await Aggrement.find({renterId:renter}).populate("agreementDetailsId").populate("ownerId", "name imageUrl").populate({ path: "listingId", populate: { path: "images" } }).sort({ createdAt: -1 })
         if(aggreements){
             res.status(STATUS.SUCCESS).json({
                 status: BOOLEAN.TRUE,
                 message: RESPONCE_MESSAGE.USER_FETCHED,
                 data: {
-                    aggreements
+                    aggreements: aggreements.map(serializeAgreement)
                 }
             });
         }else{

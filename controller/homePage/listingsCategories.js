@@ -1,3 +1,4 @@
+const { publicListingFilter } = require("../../services/rentalAvailability");
 const Aggrement = require("../../model/agreements/Aggrement");
 const listings = require("../../model/listings/RentalItemModel")
 const AggrementDetails = require("../../model/agreements/AggrementDetails");
@@ -14,9 +15,7 @@ const { io } = require("../../utils/socket");
 
 exports.getAllCarsListings = async (req, res, next) => {
     try {
-        const CarListings = await listings.find({
-            category: "car"
-        })
+        const CarListings = await listings.find(await publicListingFilter({ category: "car" }))
         .populate("images")
         .populate("videos")
         .populate('location')
@@ -34,9 +33,7 @@ exports.getAllCarsListings = async (req, res, next) => {
 }
 exports.getAllHouseListings = async (req, res, next) => {
     try {
-        const HouseListings = await listings.find({
-            category: "house"
-        })
+        const HouseListings = await listings.find(await publicListingFilter({ category: "house" }))
         .populate("images")
         .populate("videos")
         .populate('facilities')
@@ -57,9 +54,7 @@ exports.getAllHouseListings = async (req, res, next) => {
 exports.getAllHostelListings = async (req, res, next) => {
     try {
 
-        const HostelListings = await listings.find({
-            category: "hostel"   
-        })
+        const HostelListings = await listings.find(await publicListingFilter({ category: "hostel" }))
         .populate("images")
         .populate("videos")
         .populate('facilities')

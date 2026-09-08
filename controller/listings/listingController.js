@@ -1,3 +1,4 @@
+const { publicListingFilter, annotateListings, currentAgreements } = require("../../services/rentalAvailability");
 const RentalItem = require("../../model/listings/RentalItemModel");
 const Facilities = require("../../model/listings/facilitiesModel");
 const Image = require("../../model/listings/ImagesModel");
@@ -208,6 +209,10 @@ exports.placeBid = async (req, res, next) => {
     try {
         const { rentalItemId, bidAmount } = req.body;
         const userId = req.user.id;
+        const item = await RentalItem.findById(rentalItemId);
+        if (!item || item.listingStatus !== 'active' || (await currentAgreements([rentalItemId])).length) {
+            return next(new AppError(false, 'This listing is not available for rent.', STATUS.CONFLICT));
+        }
         const bidding = await Bidding.findOne({ rentalItem: rentalItemId });
         if (!bidding || !bidding.enabled) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.BIDDING_NOT_ENABLED, STATUS.BAD_REQUEST));
@@ -642,7 +647,7 @@ exports.DeleteListings = async (req, res, next) => {
 
 exports.GetListings = async (req, res, next) => {
     try {
-        const listings = await RentalItem.find({ listingStatus: "active" }).populate("owner").populate("images").populate("videos").populate("bidding").populate('facilities');
+        const listings = await RentalItem.find(await publicListingFilter()).populate("owner").populate("images").populate("videos").populate("bidding").populate('facilities');
         res.json(listings);
     } catch (error) {
         next(error)
@@ -670,7 +675,7 @@ exports.GetListingsById = async (req, res, next) => {
         if (!listing) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
         }
-        res.json(listing);
+        res.json((await annotateListings([listing]))[0]);
     } catch (error) {
         next(error)
     }
@@ -682,12 +687,12 @@ exports.GetListingByUserId = async (req, res, next) => {
     const { id } = req.params;
     try {
 
-        const listing = await RentalItem.find({ owner: id })
+        const listing = await RentalItem.find(await publicListingFilter({ owner: id }))
             .populate("images")
             .populate("videos")
             .populate("location")
             .populate("facilities");
-        const count = await RentalItem.countDocuments({ owner: id });
+        const count = listing.length;
 
 
         if (!listing) {
@@ -704,7 +709,7 @@ exports.GetALLListingByOwners = async (req, res, next) => {
 
     try {
 
-        const listing = await RentalItem.find().populate("owner", "name email").populate('bidding');
+        const listing = await RentalItem.find(await publicListingFilter()).populate("owner", "name email").populate('bidding');
         if (!listing) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
         }
@@ -722,7 +727,7 @@ exports.GetALLListingByOwnersId = async (req, res, next) => {
     const { id } = req.params;
     try {
 
-        const listing = await RentalItem.find({ owner: id }).populate("owner", "name email").populate('bidding');
+        const listing = await RentalItem.find(await publicListingFilter({ owner: id })).populate("owner", "name email").populate('bidding');
         if (!listing) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
         }
@@ -737,7 +742,7 @@ exports.GetALLListingByOwnersId = async (req, res, next) => {
 }
 exports.AllDetailWithMedia = async (req, res, next) => {
     try {
-        const listing = await RentalItem.find().populate("owner", "name email").populate("images", "url caption ").populate("videos", "url caption");
+        const listing = await RentalItem.find(await publicListingFilter()).populate("owner", "name email").populate("images", "url caption ").populate("videos", "url caption");
         if (!listing) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
         }
@@ -753,7 +758,7 @@ exports.AllDetailWithMedia = async (req, res, next) => {
 exports.AllDetailWithMediaWithOwnerID = async (req, res, next) => {
     try {
         const { id } = req.params;
-        const listing = await RentalItem.find({ owner: id })
+        const listing = await RentalItem.find(await publicListingFilter({ owner: id }))
             .populate("owner", "name email")
             .populate("images", "url caption")
             .populate("videos", "url caption");
@@ -765,4 +770,12 @@ exports.AllDetailWithMediaWithOwnerID = async (req, res, next) => {
     } catch (error) {
         next(error)
     }
+};
+
+exports.GetMyListings = async (req, res, next) => {
+    try {
+        const listings = await RentalItem.find({ owner: req.user._id })
+            .populate('images').populate('location').sort({ createdAt: -1 });
+        res.json({ listing: await annotateListings(listings), count: listings.length });
+    } catch (error) { next(error); }
 };

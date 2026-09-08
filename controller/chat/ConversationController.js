@@ -1,3 +1,4 @@
+const { annotateListings } = require("../../services/rentalAvailability");
 const mongoose = require("mongoose");
 const Conversation = require("../../model/chat/ConversationModel");
 const Messsage = require("../../model/chat/MesssageModel");
@@ -151,7 +152,7 @@ const createMessage = async (req, res, next) => {
     const senderId = req.user._id;
     const receiver = req.body.receiver;
 
-    if (!message || !listing || !senderId || !receiver) {
+    if (typeof message !== "string" || !message.trim() || message.length > 5000 || !listing || !senderId || !receiver || String(senderId) === String(receiver)) {
       return next(
         new AppError(
           BOOLEAN.FALSE,
@@ -232,12 +233,10 @@ const createMessage = async (req, res, next) => {
       }
       
 
-      res.status(STATUS.SUCCESS).json({
-        success: BOOLEAN.TRUE,
-        message: CONVERSATION.MESSAGE_SENT,
-        data: newMessage,
-      });
     }
+    res.status(STATUS.SUCCESS).json({
+      success: BOOLEAN.TRUE, message: CONVERSATION.MESSAGE_SENT, data: newMessage,
+    });
   } catch (error) {
 
     next(error);
@@ -269,9 +268,19 @@ const fetchConversationsForSidebarOld = async (req, res, next) => {
       );
     }
 
-    res
-      .status(STATUS.SUCCESS)
-      .json({ success: BOOLEAN.TRUE, data: conversations });
+    const enrichedListings = await annotateListings(conversations.flatMap(item => item.listing || []));
+    const listingMap = new Map(enrichedListings.map(item => [String(item._id), item]));
+    const latestMessages = await Messsage.aggregate([
+      { $match: { conversation: { $in: conversations.map(item => item._id) } } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$conversation', message: { $first: '$message' }, createdAt: { $first: '$createdAt' } } }
+    ]);
+    const messageMap = new Map(latestMessages.map(item => [String(item._id), item]));
+    const data = conversations.map(item => ({ ...item,
+      listing: (item.listing || []).map(list => listingMap.get(String(list._id)) || list),
+      lastMessage: messageMap.get(String(item._id)) || null
+    })).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    res.status(STATUS.SUCCESS).json({ success: BOOLEAN.TRUE, data });
   } catch (error) {
     next(error);
   }
@@ -340,6 +349,7 @@ const fetchConversationsForSidebar = async (req, res, next) => {
             imageUrl: 1,
           },
           listing: {
+            listingStatus: 1,
             owner: 1,
             _id: 1,
             title: 1,
@@ -372,9 +382,19 @@ const fetchConversationsForSidebar = async (req, res, next) => {
       );
     }
 
-    res
-      .status(STATUS.SUCCESS)
-      .json({ success: BOOLEAN.TRUE, data: conversations });
+    const enrichedListings = await annotateListings(conversations.flatMap(item => item.listing || []));
+    const listingMap = new Map(enrichedListings.map(item => [String(item._id), item]));
+    const latestMessages = await Messsage.aggregate([
+      { $match: { conversation: { $in: conversations.map(item => item._id) } } },
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$conversation', message: { $first: '$message' }, createdAt: { $first: '$createdAt' } } }
+    ]);
+    const messageMap = new Map(latestMessages.map(item => [String(item._id), item]));
+    const data = conversations.map(item => ({ ...item,
+      listing: (item.listing || []).map(list => listingMap.get(String(list._id)) || list),
+      lastMessage: messageMap.get(String(item._id)) || null
+    })).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    res.status(STATUS.SUCCESS).json({ success: BOOLEAN.TRUE, data });
   } catch (error) {
     next(error);
   }
@@ -402,7 +422,7 @@ const fetchMessagesByConversation = async (req, res, next) => {
       );
     }
 
-    if (!conversation.participants.includes(userId)) {
+    if (!conversation.participants.some(id => String(id) === String(userId))) {
       return next(
         new AppError(
           BOOLEAN.FALSE,
@@ -422,18 +442,6 @@ const fetchMessagesByConversation = async (req, res, next) => {
       { conversation: conversationId, receiver: userId, status: "sent" },
       { $set: { status: "read", updatedAt: new Date() } }
     );
-    if (io) {
-      io.emit("joinRoom", conversationId.toString());
-    } else {
-      return next(
-        new AppError(
-          BOOLEAN.FALSE,
-          CONVERSATION.SOCKET_ERROR,
-          STATUS.BAD_REQUEST
-        )
-      );
-    }
-
     res.status(STATUS.SUCCESS).json({
       success: BOOLEAN.TRUE,
       data: messages,

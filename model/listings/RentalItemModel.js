@@ -42,6 +42,7 @@ const RentalSchema = new mongoose.Schema({
     enum: ["active", "Inactive", "pending", "Rented"],
     default: "pending",
   },
+  agreementCreationLock: { token: String, expiresAt: Date },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
