@@ -83,15 +83,22 @@ exports.updateUserDashboardProfile = async (req, res, next) => {
       }
     }
 
-      let userSettings = await UserSettings.findOneAndUpdate(
+    let preferences = {};
+    try {
+      preferences = notificationPreferences ? JSON.parse(notificationPreferences) : {};
+    } catch {
+      preferences = {};
+    }
+
+    let userSettings = await UserSettings.findOneAndUpdate(
         { user: id },
         {
           notificationPreferences: {
-            review: JSON.parse(notificationPreferences).review,
-            comment: JSON.parse(notificationPreferences).comment,
-            system: JSON.parse(notificationPreferences).system,
-            aggreement: JSON.parse(notificationPreferences).aggreement,
-            chat: JSON.parse(notificationPreferences).chat,
+            review: preferences.review ?? true,
+            comment: preferences.comment ?? true,
+            system: preferences.system ?? true,
+            aggreement: preferences.aggreement ?? true,
+            chat: preferences.chat ?? true,
           }
         },
         { new: true, upsert: true }

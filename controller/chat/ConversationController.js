@@ -302,6 +302,27 @@ const fetchConversationsForSidebar = async (req, res, next) => {
           as: "listing",
         },
       },
+      {
+        $lookup: {
+          from: "messsages",
+          let: { conversationId: "$_id", currentUser: new mongoose.Types.ObjectId(userId) },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$conversation", "$$conversationId"] },
+                    { $eq: ["$receiver", "$$currentUser"] },
+                    { $eq: ["$status", "sent"] },
+                  ],
+                },
+              },
+            },
+            { $count: "count" },
+          ],
+          as: "unreadMessages",
+        },
+      },
       { $unwind: "$user" },
       {
         $project: {
@@ -319,6 +340,7 @@ const fetchConversationsForSidebar = async (req, res, next) => {
           },
           createdAt: 1,
           updatedAt: 1,
+          unreadMessages: 1,
         },
       },
       {
@@ -328,6 +350,7 @@ const fetchConversationsForSidebar = async (req, res, next) => {
           listing: { $first: "$listing" },
           createdAt: { $first: "$createdAt" },
           updatedAt: { $first: "$updatedAt" },
+          unreadMessagesCount: { $first: { $ifNull: [{ $arrayElemAt: ["$unreadMessages.count", 0] }, 0] } },
         },
       },
     ]);
@@ -386,6 +409,11 @@ const fetchMessagesByConversation = async (req, res, next) => {
       .populate("sender", "name imageUrl")
       .populate("receiver", "name imageUrl")
       .populate("listing", "title image");
+
+    await Messsage.updateMany(
+      { conversation: conversationId, receiver: userId, status: "sent" },
+      { $set: { status: "read", updatedAt: new Date() } }
+    );
     if (io) {
       io.emit("joinRoom", conversationId.toString());
     } else {

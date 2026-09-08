@@ -280,8 +280,8 @@ exports.sentAggreement = async (req, res, next) => {
        
         if(messageLink){
             await CreateNotification(
-                agg.ownerId,
                 agg.renterId,
+                agg.ownerId,
                 "aggreement",
                 `You have received a new agreement for ${listingTitle.title} from the owner. Please review and confirm`,
                 next,

@@ -16,10 +16,10 @@ const { STATUS } = require("../../messages/status");
 const AppError = require("../../utils/AppError");
 const { ROLES, BOOLEAN } = require("../../utils/Roles");
 const QRCode = require("qrcode");
-const { io } = require("../../utils/socket");
 const Messsage = require("../../model/chat/MesssageModel");
 const Conversation = require("../../model/chat/ConversationModel");
 const sendWebPush = require("../../utils/pushService");
+const { io } = require("../../utils/socket");
 
 
 exports.CreateNotification = async (recipient, sender, type, message, next, ) => {
@@ -33,20 +33,27 @@ exports.CreateNotification = async (recipient, sender, type, message, next, ) =>
     // Notification settings are optional. A missing settings document must
     // not prevent the underlying action (for example, sending a chat message)
     // from succeeding.
-    if (!userSettings) {
-      return null;
-    }
-        const isEnabled = userSettings.notificationPreferences[type.toLowerCase()];
-        
-        if (!isEnabled) {
+    if (userSettings) {
+        const preference = userSettings.notificationPreferences?.[type.toLowerCase()];
+        if (preference === false) {
           return null;
         }
+    }
     
     const newNotification = await Notification.create({
       recipient: recipient,
       sender: sender,
       type: type,
       message: message,
+    });
+
+    io.to(recipient.toString()).emit("notification", {
+      _id: newNotification._id,
+      sender,
+      type: newNotification.type,
+      message: newNotification.message,
+      isRead: newNotification.isRead,
+      createdAt: newNotification.createdAt,
     });
     if (userSettings?.webPushSubscription?.endpoint) {
       
