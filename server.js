@@ -33,7 +33,9 @@ const { errorHandler, notFound } = require("./middleware/errorHandler");
 const AppError = require("./utils/AppError");
 const asyncHandler = require("./middleware/asyncWrapper");
 const { setupSocket, io, app, server } = require("./utils/socket");
-const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+const isDeployed = process.env.NODE_ENV === "production" ||
+  process.env.VERCEL === "1" ||
+  /^https:\/\//i.test(process.env.CLIENT_URL || "");
 // Register Passport strategies when the app is loaded by Vercel as well as
 // when it is started with `node server.js`.
 require("./utils/third_party_Login");
@@ -58,7 +60,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: false,
-      sameSite: isProduction ? "None" : "Lax",
+      secure: isDeployed,
+      sameSite: isDeployed ? "None" : "Lax",
       maxAge: 30 * 24 * 60 * 60 * 1000,
     },
   })

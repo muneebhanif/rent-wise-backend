@@ -6,7 +6,12 @@ const { ERROR_MESSAGE } = require("../messages/error");
 const { STATUS } = require("../messages/status");
 const { RESPONCE_MESSAGE } = require("../messages/response");
 const { BOOLEAN } = require("../utils/Roles");
-const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+// The client and API are deployed on different Vercel origins. In that case
+// the auth cookie must be sent cross-site, even if NODE_ENV was not set to
+// production in the deployment settings.
+const isDeployed = process.env.NODE_ENV === "production" ||
+  process.env.VERCEL === "1" ||
+  /^https:\/\//i.test(process.env.CLIENT_URL || "");
 
 const makeToken = async (_id) => {
   return jsonwebtoken.sign({ _id }, process.env.JWT_API_SECRET_KEY, {
@@ -21,9 +26,9 @@ const GenerateToken = async (user, req, res, next) => {
     const token = await makeToken(user._id);
     res.cookie("jwt", token, {
       httpOnly: BOOLEAN.TRUE,
-     secure: isProduction,
+      secure: isDeployed,
       maxAge: 30 * 24 * 60 * 60 * 1000,
-     sameSite: isProduction ? "None" : "Lax",
+      sameSite: isDeployed ? "None" : "Lax",
     
       // sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
       //   secure: process.env.NODE_ENV === 'production', // Use HTTPS in production
