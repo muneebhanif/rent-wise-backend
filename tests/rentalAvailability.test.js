@@ -16,10 +16,10 @@ const agreements = [
   { listingId: 'rented', ownerConfirmed: true, renterConfirmed: true },
   { listingId: 'expired', ownerConfirmed: true, renterConfirmed: true, agreementDetailsId: { aggrementDetail: { endDate: '2000-01-01' } } },
 ];
-test('public queries hide every current agreement and keep category and active filters', async () => {
+test('public queries keep rented listings visible and retain category and active filters', async () => {
   const filter = await service(agreements).publicListingFilter({ category: 'car' });
   assert.equal(filter.category, 'car'); assert.equal(filter.listingStatus, 'active');
-  assert.deepEqual(Array.from(filter._id.$nin), ['pending', 'rented']);
+  assert.equal(filter._id, undefined);
 });
 test('owners retain all listings with accurate status including manual rented and unpublished', async () => {
   const listings = ['pending', 'rented', 'expired', 'available'].map(_id => ({ _id, listingStatus: 'active' }));

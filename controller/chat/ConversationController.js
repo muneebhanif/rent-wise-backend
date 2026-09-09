@@ -348,14 +348,11 @@ const fetchConversationsForSidebar = async (req, res, next) => {
             email: 1,
             imageUrl: 1,
           },
-          listing: {
-            listingStatus: 1,
-            owner: 1,
-            _id: 1,
-            title: 1,
-            image: 1,
-            category: 1,
-          },
+          // Keep the looked-up listing array intact. The previous nested
+          // object syntax produced a literal object instead of projecting the
+          // array, which meant the client could not discover an owner's
+          // available listing and hid the Create agreement action.
+          listing: 1,
           createdAt: 1,
           updatedAt: 1,
           unreadMessages: 1,

@@ -331,7 +331,7 @@ exports.getFavoriteListings = async (req, res, next) => {
             success: BOOLEAN.TRUE,
             // A listing can be deleted after it was favorited; do not return
             // null entries that break the favorites page.
-            favoriteListings: user.favoriteListings.filter(Boolean),
+            favoriteListings: await annotateListings(user.favoriteListings.filter(Boolean)),
         });
     } catch (error) {
         next(error);
@@ -648,7 +648,7 @@ exports.DeleteListings = async (req, res, next) => {
 exports.GetListings = async (req, res, next) => {
     try {
         const listings = await RentalItem.find(await publicListingFilter()).populate("owner").populate("images").populate("videos").populate("bidding").populate('facilities');
-        res.json(listings);
+        res.json(await annotateListings(listings));
     } catch (error) {
         next(error)
     }
@@ -698,7 +698,7 @@ exports.GetListingByUserId = async (req, res, next) => {
         if (!listing) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
         }
-        res.json({ listing, count });
+        res.json({ listing: await annotateListings(listing), count });
     } catch (error) {
         next(error)
     }
@@ -713,7 +713,7 @@ exports.GetALLListingByOwners = async (req, res, next) => {
         if (!listing) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
         }
-        res.json(listing);
+        res.json(await annotateListings(listing));
 
 
     } catch (error) {
@@ -731,7 +731,7 @@ exports.GetALLListingByOwnersId = async (req, res, next) => {
         if (!listing) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
         }
-        res.json(listing);
+        res.json(await annotateListings(listing));
 
 
     } catch (error) {
@@ -746,7 +746,7 @@ exports.AllDetailWithMedia = async (req, res, next) => {
         if (!listing) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
         }
-        res.json(listing);
+        res.json(await annotateListings(listing));
 
 
     } catch (error) {
@@ -766,7 +766,7 @@ exports.AllDetailWithMediaWithOwnerID = async (req, res, next) => {
         if (!listing) {
             return next(new AppError(BOOLEAN.FALSE, LISTINGS.LISTING_NOT_FOUND, STATUS.NOT_FOUND));
         }
-        res.json(listing);
+        res.json(await annotateListings(listing));
     } catch (error) {
         next(error)
     }

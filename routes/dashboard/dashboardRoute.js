@@ -7,9 +7,9 @@ const { AuthorizeUser } = require("../../middleware/auth");
 
 
 
-router.get("/getUserDashboard", asyncHandler(UserDashboard.GetUser));
+router.get("/getUserDashboard", AuthorizeUser("user"), asyncHandler(UserDashboard.GetUser));
 
-router.put("/updateUserDashboardProfile/:id", profileImage.single("avatar"), asyncHandler(UserDashboard.updateUserDashboardProfile));
+router.put("/updateUserDashboardProfile/:id", AuthorizeUser("user"), profileImage.single("avatar"), asyncHandler(UserDashboard.updateUserDashboardProfile));
 
 router.get("/reviews" , AuthorizeUser("user" , "Admin" ) , asyncHandler(review.ToGetReview))
 

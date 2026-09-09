@@ -154,8 +154,11 @@ exports.sentAggreement = async (req, res, next) => {
         if (!aggrementFromResponce) {
             return next(new AppError(BOOLEAN.FALSE, AGGREEMENT.AGGREMENT_FROM_REQUEST, STATUS.BAD_REQUEST));
         }
-        const { _id, conversationID, renterId, ownerId, listingId , message } = aggrementFromResponce;
+        const { _id, message } = aggrementFromResponce;
         const agg = await Aggrement.findById(_id);
+        if (agg && String(agg.ownerId) !== String(req.user._id)) {
+            return next(new AppError(BOOLEAN.FALSE, 'Only the listing owner can send this agreement.', STATUS.FORBIDDEN));
+        }
         if (!agg) {
             return next(new AppError(BOOLEAN.FALSE, AGGREEMENT.AGGREMENT_NOT_FOUND, STATUS.NOT_FOUND));
         }
@@ -182,7 +185,7 @@ exports.sentAggreement = async (req, res, next) => {
             message,
             agg.ownerId,
             agg.renterId,
-            conversationID,
+            agg.conversationID,
             true,
             next
         );
@@ -192,15 +195,15 @@ exports.sentAggreement = async (req, res, next) => {
      
 
         if (io) {
-            io.to(conversationID.toString()).emit("receiveMessage", {
-                conversationID,
+            io.to(agg.conversationID.toString()).emit("receiveMessage", {
+                conversationID: agg.conversationID,
                 message:message,
                 sender: agg.ownerId,
                 receiver:agg.renterId,
-                listing: listingId,
+                listing: agg.listingId,
               });
             io.to(agg.renterId.toString()).emit("messageNotification", {
-                conversationId: conversationID.toString(),
+                conversationId: agg.conversationID.toString(),
                 receiver: agg.renterId.toString(),
                 sender: agg.ownerId.toString(),
                 message: messageLink,
@@ -246,6 +249,11 @@ exports.GetByAggrementId = async (req, res, next) => {
 
         if (!agg) {
             return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.AGGREMENT_NOT_FOUND, STATUS.NOT_FOUND));
+        }
+        const canView = [agg.ownerId?._id || agg.ownerId, agg.renterId?._id || agg.renterId]
+            .some(id => String(id) === String(req.user._id));
+        if (!canView && req.user.role !== ROLES.ADMIN) {
+            return next(new AppError(BOOLEAN.FALSE, 'You do not have access to this agreement.', STATUS.FORBIDDEN));
         }
         res.status(STATUS.SUCCESS).json({
             status: STATUS.SUCCESS,

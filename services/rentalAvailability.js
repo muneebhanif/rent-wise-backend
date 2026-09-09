@@ -8,8 +8,10 @@ async function currentAgreements(listingIds) {
   return agreements.filter(agreement => blocksListing(agreement));
 }
 async function publicListingFilter(extra = {}) {
-  const agreements = await currentAgreements();
-  return { ...extra, listingStatus: 'active', _id: { $nin: agreements.map(item => item.listingId) } };
+  // Public browsing keeps active listings visible even while they are rented or
+  // reserved.  Consumers use `annotateListings` to display the correct badge
+  // and to disable rental actions for anything that is not available.
+  return { ...extra, listingStatus: 'active' };
 }
 async function annotateListings(listings) {
   const agreements = await currentAgreements(listings.map(item => item._id));

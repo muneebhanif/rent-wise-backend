@@ -1,4 +1,4 @@
-const { publicListingFilter } = require("../../services/rentalAvailability");
+const { publicListingFilter, annotateListings } = require("../../services/rentalAvailability");
 const Aggrement = require("../../model/agreements/Aggrement");
 const listings = require("../../model/listings/RentalItemModel")
 const AggrementDetails = require("../../model/agreements/AggrementDetails");
@@ -23,7 +23,7 @@ exports.getAllCarsListings = async (req, res, next) => {
         res.status(STATUS.SUCCESS).json({
             status: STATUS.SUCCESS,
             message: LISTINGS.CAR_LISTING_FETCHED,
-            data: CarListings,
+            data: await annotateListings(CarListings),
         })
 
     } catch (error) {
@@ -42,7 +42,7 @@ exports.getAllHouseListings = async (req, res, next) => {
         res.status(STATUS.SUCCESS).json({
             status: STATUS.SUCCESS,
             message: LISTINGS.HOUSE_LISTING_FETCHED,
-            data: HouseListings,
+            data: await annotateListings(HouseListings),
         })
 
     } catch (error) {
@@ -63,7 +63,7 @@ exports.getAllHostelListings = async (req, res, next) => {
         res.status(STATUS.SUCCESS).json({
             status: STATUS.SUCCESS,
             message: LISTINGS.Hostel_LISTING_FETCHED,
-            data: HostelListings,
+            data: await annotateListings(HostelListings),
         })
     } catch (error) {
         next(error)

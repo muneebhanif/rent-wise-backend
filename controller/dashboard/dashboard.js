@@ -44,6 +44,9 @@ exports.updateUserDashboardProfile = async (req, res, next) => {
   }
 
   try {
+    if (!req.user || String(req.user._id) !== String(id)) {
+      return next(new AppError(BOOLEAN.FALSE, "You can only update your own account", STATUS.FORBIDDEN));
+    }
     const user = await User.findById(id);
     if (!user) {
       return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.USER_NOT_FOUND, STATUS.NOT_FOUND));
@@ -73,7 +76,7 @@ exports.updateUserDashboardProfile = async (req, res, next) => {
         });
       } else {
 
-        const pass = bcrypt.compare(currentPassword, user.password);
+        const pass = await bcrypt.compare(currentPassword || '', user.password);
         if (!pass) {
           return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.CURRENT_PASSWORD_INVALID, STATUS.UNAUTHORIZED));
         }
