@@ -9,7 +9,9 @@ function dateValue(value, endOfDay = false) {
 function rentalState(agreement, now = new Date()) {
   const status = String(agreement.agreementStatus || '').toLowerCase();
   if (status === 'rejected') return 'rejected';
+  if (status === 'cancelled') return 'cancelled';
   if (status === 'inactive') return 'completed';
+  if (status === 'cancellation_requested' || agreement.cancellation?.status === 'pending') return 'cancellation_requested';
   const details = agreement.agreementDetailsId?.aggrementDetail || agreement.aggrementDetail || {};
   const end = dateValue(details.endDate, true);
   if (end && end < now) return 'completed';
@@ -17,7 +19,7 @@ function rentalState(agreement, now = new Date()) {
   const start = dateValue(details.startDate);
   return start && start > now ? 'upcoming' : 'rented';
 }
-const blocksListing = (agreement, now) => ['pending', 'upcoming', 'rented'].includes(rentalState(agreement, now));
+const blocksListing = (agreement, now) => ['pending', 'upcoming', 'rented', 'cancellation_requested'].includes(rentalState(agreement, now));
 const serializeAgreement = (agreement) => {
   const data = agreement.toObject ? agreement.toObject() : agreement;
   return { ...data, rentalState: rentalState(data) };

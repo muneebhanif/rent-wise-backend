@@ -18,8 +18,19 @@ const AggrementSchema = new mongoose.Schema({
     },
     agreementStatus: {
         type: String,
-        enum: ["pending", "accepted", "rejected" , "active" , "Inactive"],
+        enum: ["pending", "accepted", "rejected", "active", "Inactive", "cancellation_requested", "cancelled"],
         default: "pending",
+    },
+    cancellation: {
+        requested: { type: Boolean, default: false },
+        requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        requestedRole: { type: String, enum: ["owner", "renter"], default: "owner" },
+        requestedAt: { type: Date },
+        reason: { type: String, default: "" },
+        status: { type: String, enum: ["none", "pending", "confirmed", "declined"], default: "none" },
+        confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        confirmedAt: { type: Date },
+        cancellationAgreementDate: { type: Date },
     },
     conversationID:{
         type: mongoose.Schema.Types.ObjectId,

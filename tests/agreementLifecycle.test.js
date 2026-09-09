@@ -26,11 +26,13 @@ function setup() {
     if (name.endsWith('/Aggrement')) return Agreement;
     if (name.endsWith('/AggrementDetails')) return Details;
     if (name.endsWith('/RentalItemModel')) return {
-      findById: async () => listing,
+      findById: () => Object.assign(Promise.resolve(listing), { select: async () => ({ title: 'Test Listing' }) }),
       findOneAndUpdate: async (_, update) => { if (heldLock) return null; heldLock = update.$set.agreementCreationLock; return { ...listing, agreementCreationLock: heldLock }; },
       updateOne: async () => { heldLock = null; }
     };
-    if (name.endsWith('/ConversationModel')) return { findById: async () => ({ participants: ['owner', 'renter'], listing: ['listing'] }) };
+    if (name.endsWith('/ConversationModel')) return { findById: async () => ({ participants: ['owner', 'renter'], listing: ['listing'], save: async () => {} }) };
+    if (name.endsWith('/MesssageModel')) return class Message { constructor(d) { Object.assign(this, d); } save() { return Promise.resolve(this); } };
+    if (name.endsWith('/Roles')) return { ROLES: { ADMIN: 'admin' }, BOOLEAN: { TRUE: true, FALSE: false } };
     if (name.endsWith('/AppError')) return AppError;
     if (name.endsWith('/error')) return { ERROR_MESSAGE: {} };
     if (name.endsWith('/response')) return { RESPONCE_MESSAGE: {} };
@@ -71,4 +73,31 @@ test('only renter confirms and future rentals stay upcoming', async () => {
   // Attach the populated dates as Mongoose would when confirming.
   assert.equal(result.status, 200);
   assert.equal(app.records[0].renterConfirmed, true);
+});
+test('owner can cancel pending agreement directly', async () => {
+  const app = setup();
+  const created = await app.request('CreateAggrement', payload());
+  const aggId = created.data.data._id;
+  const result = await app.request('requestCancellation', { aggId, reason: 'Changed mind' }, 'owner');
+  assert.equal(result.status, 200);
+  assert.equal(app.records[0].agreementStatus, 'cancelled');
+  assert.equal(app.records[0].cancellation.status, 'confirmed');
+});
+test('active agreement requires mutual confirmation to cancel', async () => {
+  const app = setup();
+  const created = await app.request('CreateAggrement', payload());
+  const aggId = created.data.data._id;
+  await app.request('VerifyAggrementByRenter', { aggId, renterConfirmed: true }, 'renter');
+  const reqResult = await app.request('requestCancellation', { aggId, reason: 'Maintenance' }, 'owner');
+  assert.equal(reqResult.status, 200);
+  assert.equal(app.records[0].agreementStatus, 'cancellation_requested');
+  assert.equal(app.records[0].cancellation.status, 'pending');
+
+  const selfConfirm = await app.request('confirmCancellation', { aggId }, 'owner');
+  assert.equal(selfConfirm.status, 400);
+
+  const confirmResult = await app.request('confirmCancellation', { aggId }, 'renter');
+  assert.equal(confirmResult.status, 200);
+  assert.equal(app.records[0].agreementStatus, 'cancelled');
+  assert.equal(app.records[0].cancellation.status, 'confirmed');
 });

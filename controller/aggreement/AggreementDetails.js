@@ -33,6 +33,8 @@ exports.getByOwnerId = async (req, res, next) => {
         const agreements = await Aggrement.find({ ownerId: req.user._id })
             .populate({ path: 'listingId', populate: { path: 'images' } })
             .populate('renterId', 'name imageUrl').populate('agreementDetailsId')
+            .populate('cancellation.requestedBy', 'name email')
+            .populate('cancellation.confirmedBy', 'name email')
             .populate('blockChain').sort({ createdAt: -1 });
         res.json({ status: STATUS.SUCCESS, data: agreements.map(serializeAgreement) });
     } catch (error) { next(error); }
@@ -245,7 +247,13 @@ exports.GetByAggrementId = async (req, res, next) => {
     try {
         const { aggId } = req.body;
 
-        const agg = await Aggrement.findById(aggId).populate('agreementDetailsId').populate("renterId").populate("listingId").populate("ownerId");
+        const agg = await Aggrement.findById(aggId)
+            .populate('agreementDetailsId')
+            .populate("renterId")
+            .populate("listingId")
+            .populate("ownerId")
+            .populate("cancellation.requestedBy", "name email")
+            .populate("cancellation.confirmedBy", "name email");
 
         if (!agg) {
             return next(new AppError(BOOLEAN.FALSE, ERROR_MESSAGE.AGGREMENT_NOT_FOUND, STATUS.NOT_FOUND));
@@ -258,8 +266,8 @@ exports.GetByAggrementId = async (req, res, next) => {
         res.status(STATUS.SUCCESS).json({
             status: STATUS.SUCCESS,
             message: AGGREEMENT.AGGREMENT_FECTHED_BY_ID,
-            data: agg,
-        })
+            data: serializeAgreement(agg),
+        });
     } catch (error) {
         next(error);
     }
@@ -362,4 +370,282 @@ exports.UpdateAggrementByOwner = async (req, res, next) => {
     } catch (err) {
         next(err);
     }
-}
+};
+
+exports.requestCancellation = async (req, res, next) => {
+    try {
+        const { aggId, reason } = req.body;
+        if (!aggId) return next(new AppError(false, 'Agreement ID is required.', STATUS.BAD_REQUEST));
+        const agreement = await Aggrement.findById(aggId).populate('agreementDetailsId');
+        if (!agreement) return next(new AppError(false, 'Agreement not found.', STATUS.NOT_FOUND));
+
+        const isOwner = String(agreement.ownerId) === String(req.user._id);
+        const isRenter = String(agreement.renterId) === String(req.user._id);
+        if (!isOwner && !isRenter && req.user.role !== ROLES.ADMIN) {
+            return next(new AppError(false, 'You do not have access to this agreement.', STATUS.FORBIDDEN));
+        }
+
+        const state = rentalState(agreement);
+        if (state === 'cancelled' || state === 'completed' || state === 'rejected') {
+            return next(new AppError(false, 'This agreement has already ended or is cancelled.', STATUS.CONFLICT));
+        }
+
+        const requestedRole = isOwner ? 'owner' : 'renter';
+        const targetUserId = isOwner ? agreement.renterId : agreement.ownerId;
+        const listing = await RentalItem.findById(agreement.listingId).select('title');
+        const listingTitle = listing?.title || 'rental listing';
+
+        // If the agreement has not been confirmed by renter yet, owner can cancel directly
+        if (!agreement.renterConfirmed) {
+            agreement.agreementStatus = 'cancelled';
+            agreement.cancellation = {
+                requested: true,
+                requestedBy: req.user._id,
+                requestedRole,
+                requestedAt: new Date(),
+                reason: reason || 'Agreement cancelled before confirmation.',
+                status: 'confirmed',
+                confirmedBy: req.user._id,
+                confirmedAt: new Date(),
+                cancellationAgreementDate: new Date(),
+            };
+            await agreement.save();
+
+            const cancelMsg = `Agreement cancelled for ${listingTitle} by ${isOwner ? 'owner' : 'renter'}. Reason: ${reason || 'Not specified'}`;
+            const messageLink = await createLinkMessage(
+                agreement.listingId,
+                cancelMsg,
+                req.user._id,
+                targetUserId,
+                agreement.conversationID,
+                false,
+                next
+            );
+
+            if (io && agreement.conversationID) {
+                io.to(agreement.conversationID.toString()).emit("receiveMessage", {
+                    conversationID: agreement.conversationID,
+                    message: cancelMsg,
+                    sender: req.user._id,
+                    receiver: targetUserId,
+                    listing: agreement.listingId,
+                });
+            }
+
+            try {
+                await CreateNotification(
+                    targetUserId,
+                    req.user._id,
+                    "aggreement",
+                    `The agreement for ${listingTitle} was cancelled.`,
+                    next,
+                    res
+                );
+            } catch (e) {}
+
+            return res.status(STATUS.SUCCESS).json({
+                status: STATUS.SUCCESS,
+                message: 'Agreement cancelled.',
+                data: serializeAgreement(agreement),
+            });
+        }
+
+        // For active agreements: create cancellation agreement request for mutual confirmation
+        agreement.agreementStatus = 'cancellation_requested';
+        agreement.cancellation = {
+            requested: true,
+            requestedBy: req.user._id,
+            requestedRole,
+            requestedAt: new Date(),
+            reason: reason || 'Cancellation agreement requested.',
+            status: 'pending',
+            cancellationAgreementDate: new Date(),
+        };
+        await agreement.save();
+
+        const cancelRequestMsg = `Cancellation Agreement: ${isOwner ? 'Owner' : 'Renter'} requested to cancel the rental agreement for ${listingTitle}. Reason: ${reason || 'Not specified'}. Please review and confirm the cancellation agreement.`;
+        const messageLink = await createLinkMessage(
+            agreement.listingId,
+            cancelRequestMsg,
+            req.user._id,
+            targetUserId,
+            agreement.conversationID,
+            true,
+            next
+        );
+
+        if (io && agreement.conversationID) {
+            io.to(agreement.conversationID.toString()).emit("receiveMessage", {
+                conversationID: agreement.conversationID,
+                message: cancelRequestMsg,
+                sender: req.user._id,
+                receiver: targetUserId,
+                listing: agreement.listingId,
+            });
+            io.to(targetUserId.toString()).emit("messageNotification", {
+                conversationId: agreement.conversationID.toString(),
+                receiver: targetUserId.toString(),
+                sender: req.user._id.toString(),
+                message: messageLink,
+            });
+        }
+
+        try {
+            await CreateNotification(
+                targetUserId,
+                req.user._id,
+                "aggreement",
+                `Cancellation agreement requested for ${listingTitle}. Please review and confirm.`,
+                next,
+                res
+            );
+        } catch (e) {}
+
+        return res.status(STATUS.SUCCESS).json({
+            status: STATUS.SUCCESS,
+            message: 'Cancellation agreement sent to other party for confirmation.',
+            data: serializeAgreement(agreement),
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+exports.confirmCancellation = async (req, res, next) => {
+    try {
+        const { aggId } = req.body;
+        if (!aggId) return next(new AppError(false, 'Agreement ID is required.', STATUS.BAD_REQUEST));
+        const agreement = await Aggrement.findById(aggId).populate('agreementDetailsId');
+        if (!agreement) return next(new AppError(false, 'Agreement not found.', STATUS.NOT_FOUND));
+
+        if (agreement.cancellation?.status !== 'pending') {
+            return next(new AppError(false, 'No pending cancellation agreement to confirm.', STATUS.BAD_REQUEST));
+        }
+
+        // Only the other party can confirm the cancellation request
+        if (String(agreement.cancellation?.requestedBy) === String(req.user._id)) {
+            return next(new AppError(false, 'You cannot confirm your own cancellation request. Waiting for the other party.', STATUS.BAD_REQUEST));
+        }
+
+        const isOwner = String(agreement.ownerId) === String(req.user._id);
+        const isRenter = String(agreement.renterId) === String(req.user._id);
+        if (!isOwner && !isRenter && req.user.role !== ROLES.ADMIN) {
+            return next(new AppError(false, 'You do not have access to confirm this cancellation.', STATUS.FORBIDDEN));
+        }
+
+        agreement.cancellation.status = 'confirmed';
+        agreement.cancellation.confirmedBy = req.user._id;
+        agreement.cancellation.confirmedAt = new Date();
+        agreement.agreementStatus = 'cancelled';
+        await agreement.save();
+
+        const listing = await RentalItem.findById(agreement.listingId).select('title');
+        const listingTitle = listing?.title || 'rental listing';
+        const requesterId = agreement.cancellation.requestedBy;
+
+        const confirmMsg = `Cancellation Agreement Confirmed: Both parties have confirmed the cancellation of the agreement for ${listingTitle}. The agreement is now terminated and the listing is available again.`;
+        const messageLink = await createLinkMessage(
+            agreement.listingId,
+            confirmMsg,
+            req.user._id,
+            requesterId,
+            agreement.conversationID,
+            false,
+            next
+        );
+
+        if (io && agreement.conversationID) {
+            io.to(agreement.conversationID.toString()).emit("receiveMessage", {
+                conversationID: agreement.conversationID,
+                message: confirmMsg,
+                sender: req.user._id,
+                receiver: requesterId,
+                listing: agreement.listingId,
+            });
+        }
+
+        try {
+            await CreateNotification(
+                requesterId,
+                req.user._id,
+                "aggreement",
+                `The cancellation agreement for ${listingTitle} has been confirmed. The agreement is now cancelled.`,
+                next,
+                res
+            );
+        } catch (e) {}
+
+        return res.status(STATUS.SUCCESS).json({
+            status: STATUS.SUCCESS,
+            message: 'Cancellation agreement confirmed by both parties. Agreement is now cancelled.',
+            data: serializeAgreement(agreement),
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+exports.declineCancellation = async (req, res, next) => {
+    try {
+        const { aggId, reason } = req.body;
+        if (!aggId) return next(new AppError(false, 'Agreement ID is required.', STATUS.BAD_REQUEST));
+        const agreement = await Aggrement.findById(aggId).populate('agreementDetailsId');
+        if (!agreement) return next(new AppError(false, 'Agreement not found.', STATUS.NOT_FOUND));
+
+        if (agreement.cancellation?.status !== 'pending') {
+            return next(new AppError(false, 'No pending cancellation request to decline.', STATUS.BAD_REQUEST));
+        }
+
+        if (String(agreement.cancellation?.requestedBy) === String(req.user._id)) {
+            return next(new AppError(false, 'You cannot decline your own cancellation request.', STATUS.BAD_REQUEST));
+        }
+
+        agreement.cancellation.status = 'declined';
+        agreement.agreementStatus = agreement.ownerConfirmed && agreement.renterConfirmed ? 'active' : 'pending';
+        await agreement.save();
+
+        const listing = await RentalItem.findById(agreement.listingId).select('title');
+        const listingTitle = listing?.title || 'rental listing';
+        const requesterId = agreement.cancellation.requestedBy;
+
+        const declineMsg = `Cancellation Request Declined: The request to cancel the agreement for ${listingTitle} was declined.${reason ? ` Reason: ${reason}` : ''}`;
+        await createLinkMessage(
+            agreement.listingId,
+            declineMsg,
+            req.user._id,
+            requesterId,
+            agreement.conversationID,
+            false,
+            next
+        );
+
+        if (io && agreement.conversationID) {
+            io.to(agreement.conversationID.toString()).emit("receiveMessage", {
+                conversationID: agreement.conversationID,
+                message: declineMsg,
+                sender: req.user._id,
+                receiver: requesterId,
+                listing: agreement.listingId,
+            });
+        }
+
+        try {
+            await CreateNotification(
+                requesterId,
+                req.user._id,
+                "aggreement",
+                `The cancellation request for ${listingTitle} was declined.`,
+                next,
+                res
+            );
+        } catch (e) {}
+
+        return res.status(STATUS.SUCCESS).json({
+            status: STATUS.SUCCESS,
+            message: 'Cancellation request declined.',
+            data: serializeAgreement(agreement),
+        });
+    } catch (err) {
+        next(err);
+    }
+};

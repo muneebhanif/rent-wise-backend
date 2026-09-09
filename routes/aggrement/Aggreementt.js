@@ -18,9 +18,9 @@ router.post("/getAggrementDetails", AuthorizeUser("user", "admin"), asyncHandler
 router.post("/VerifyAggrementByRenter", AuthorizeUser("user", "admin"), asyncHandler(Aggreement.VerifyAggrementByRenter));
 
 
-// this is only for owner to update the aggrement status and update the aggrement details
-router.post("/updateAggreementByOwner", AuthorizeUser("user", "admin"), asyncHandler(Aggreement.UpdateAggrementByOwner));
-
-
+// cancellation flow: owner/renter can request cancellation, and other party confirms/declines
+router.post("/requestCancellation", AuthorizeUser("user", "admin"), asyncHandler(Aggreement.requestCancellation));
+router.post("/confirmCancellation", AuthorizeUser("user", "admin"), asyncHandler(Aggreement.confirmCancellation));
+router.post("/declineCancellation", AuthorizeUser("user", "admin"), asyncHandler(Aggreement.declineCancellation));
 
 module.exports = router;

@@ -2,20 +2,20 @@ const Agreement = require('../model/agreements/Aggrement');
 const { blocksListing, rentalState } = require('../utils/rentalState');
 
 async function currentAgreements(listingIds) {
-  const query = { agreementStatus: { $nin: ['Inactive', 'rejected'] } };
+  const query = { agreementStatus: { $nin: ['Inactive', 'rejected', 'cancelled'] } };
   if (listingIds) query.listingId = { $in: listingIds };
   const agreements = await Agreement.find(query).populate('agreementDetailsId').lean();
   return agreements.filter(agreement => blocksListing(agreement));
 }
 async function publicListingFilter(extra = {}) {
-  // Public browsing keeps active listings visible even while they are rented or
-  // reserved.  Consumers use `annotateListings` to display the correct badge
+  // Public browsing keeps active listings visible even while they are rented.
+  // Consumers use `annotateListings` to display the correct badge
   // and to disable rental actions for anything that is not available.
   return { ...extra, listingStatus: 'active' };
 }
 async function annotateListings(listings) {
   const agreements = await currentAgreements(listings.map(item => item._id));
-  const priority = { rented: 3, upcoming: 2, pending: 1 };
+  const priority = { rented: 4, cancellation_requested: 3, upcoming: 2, pending: 1 };
   return listings.map(listing => {
     const data = listing.toObject ? listing.toObject() : listing;
     const current = agreements.filter(item => String(item.listingId) === String(data._id))

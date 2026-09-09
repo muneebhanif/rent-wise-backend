@@ -14,6 +14,8 @@ for (const [label, data, state, blocks] of [
   ['end date includes the whole day', agreement({}, { endDate: '2026-09-08' }), 'rented', true],
   ['rejected agreement does not block', agreement({ agreementStatus: 'rejected' }), 'rejected', false],
   ['inactive agreement does not block', agreement({ agreementStatus: 'Inactive' }), 'completed', false],
+  ['cancelled agreement releases listing', agreement({ agreementStatus: 'cancelled' }), 'cancelled', false],
+  ['cancellation requested keeps blocking until confirmed', agreement({ agreementStatus: 'cancellation_requested' }), 'cancellation_requested', true],
   ['legacy missing dates remain reserved conservatively', { agreementStatus: 'pending' }, 'pending', true],
 ]) test(label, () => { assert.equal(rentalState(data, now), state); assert.equal(blocksListing(data, now), blocks); });
 test('invalid dates do not crash and exact timestamps preserve their time', () => {
